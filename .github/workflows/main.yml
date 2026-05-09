@@ -1,5 +1,4 @@
 name: Build Android App
-
 on:
   repository_dispatch:
     types: [build_app]
@@ -7,7 +6,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -19,15 +17,19 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
+      - name: Fix Gradle Wrapper Jar
+        run: |
+          mkdir -p gradle/wrapper
+          curl -L https://raw.githubusercontent.com/gradle/gradle/master/gradle/wrapper/gradle-wrapper.jar -o gradle/wrapper/gradle-wrapper.jar
+
       - name: Update App Name and Website URL
         run: |
-          # strings.xml ထဲက Placeholder တွေကို အစားထိုးခြင်း
           sed -i "s|PlaceholderName|${{ github.event.client_payload.app_name }}|g" app/src/main/res/values/strings.xml
           sed -i "s|https://example.com|${{ github.event.client_payload.url }}|g" app/src/main/res/values/strings.xml
 
       - name: Replace App Icon (Logo)
         run: |
-          # Telegram ကနေလာတဲ့ ပုံကို App Icon နေရာမှာ အစားထိုးခြင်း
+          mkdir -p app/src/main/res/mipmap-xxxhdpi
           curl -L "${{ github.event.client_payload.logo_url }}" -o app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
           cp app/src/main/res/mipmap-xxxhdpi/ic_launcher.png app/src/main/res/mipmap-hdpi/ic_launcher.png
           cp app/src/main/res/mipmap-xxxhdpi/ic_launcher.png app/src/main/res/mipmap-mdpi/ic_launcher.png
@@ -49,10 +51,5 @@ jobs:
 
       - name: Upload APK & AAB to Telegram
         run: |
-          # APK ဖိုင်ပို့ရန်
           curl -v -F document=@app/build/outputs/apk/release/app-release.apk \
-          "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument?chat_id=${{ secrets.TELEGRAM_CHAT_ID }}&caption=✅ APK Build Success for ${{ github.event.client_payload.app_name }}"
-
-          # AAB ဖိုင်ပို့ရန် (Play Store အတွက်)
-          curl -v -F document=@app/build/outputs/bundle/release/app-release.aab \
-          "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument?chat_id=${{ secrets.TELEGRAM_CHAT_ID }}&caption=📦 AAB (Signed) for Play Store"
+            "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument?chat_id=${{ secrets.TELEGRAM_CHAT_ID }}&caption=✅ APK Success: ${{ github.event.client_payload.app_name }}"
