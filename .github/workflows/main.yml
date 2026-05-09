@@ -29,8 +29,14 @@ jobs:
 
       - name: Replace App Icon (Logo)
         run: |
-          mkdir -p app/src/main/res/mipmap-xxxhdpi
-          curl -L "${{ github.event.client_payload.logo_url }}" -o app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          sudo apt-get install -y imagemagick
+          mkdir -p app/src/main/res/mipmap-hdpi app/src/main/res/mipmap-mdpi app/src/main/res/mipmap-xhdpi app/src/main/res/mipmap-xxhdpi app/src/main/res/mipmap-xxxhdpi
+          
+          # ပုံကို Download ဆွဲပြီး Standard PNG အဖြစ် ပြောင်းလဲခြင်း
+          curl -L "${{ github.event.client_payload.logo_url }}" -o temp_logo.png
+          convert temp_logo.png -resize 512x512 app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          
+          # အခြား Size များသို့ ကူးထည့်ခြင်း
           cp app/src/main/res/mipmap-xxxhdpi/ic_launcher.png app/src/main/res/mipmap-hdpi/ic_launcher.png
           cp app/src/main/res/mipmap-xxxhdpi/ic_launcher.png app/src/main/res/mipmap-mdpi/ic_launcher.png
           cp app/src/main/res/mipmap-xxxhdpi/ic_launcher.png app/src/main/res/mipmap-xhdpi/ic_launcher.png
@@ -43,13 +49,13 @@ jobs:
       - name: Build APK & AAB (Release)
         run: |
           chmod +x gradlew
-          ./gradlew bundleRelease assembleRelease \
+          ./gradlew :app:bundleRelease :app:assembleRelease \
             -Pandroid.injected.signing.store.file=$GITHUB_WORKSPACE/release.jks \
             -Pandroid.injected.signing.store.password=${{ secrets.KEYSTORE_PASSWORD }} \
             -Pandroid.injected.signing.key.alias=${{ secrets.KEY_ALIAS }} \
             -Pandroid.injected.signing.key.password=${{ secrets.KEY_PASSWORD }}
 
-      - name: Upload APK & AAB to Telegram
+      - name: Upload APK to Telegram
         run: |
           curl -v -F document=@app/build/outputs/apk/release/app-release.apk \
             "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument?chat_id=${{ secrets.TELEGRAM_CHAT_ID }}&caption=✅ APK Success: ${{ github.event.client_payload.app_name }}"
