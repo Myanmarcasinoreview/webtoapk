@@ -1,13 +1,22 @@
-name: Build Android App
+name: Web to APK Builder
+
 on:
-  repository_dispatch:
-    types: [build_app]
+  workflow_dispatch:
+    inputs:
+      app_name:
+        description: 'App Name'
+        required: true
+        default: 'My Web App'
+      web_url:
+        description: 'Website URL'
+        required: true
+        default: 'https://google.com'
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
+      - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
@@ -17,45 +26,36 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
-      - name: Fix Gradle Wrapper Jar
-        run: |
-          mkdir -p gradle/wrapper
-          curl -L https://raw.githubusercontent.com/gradle/gradle/master/gradle/wrapper/gradle-wrapper.jar -o gradle/wrapper/gradle-wrapper.jar
+      - name: Grant Execute Permission for Gradlew
+        run: chmod +x gradlew
 
-      - name: Update App Name and Website URL
+      # ImageMagick သုံးပြီး App Icon ကို အလိုအလျောက် ပြင်ဆင်ခြင်း
+      - name: Prepare App Icon
         run: |
-          sed -i "s|PlaceholderName|${{ github.event.client_payload.app_name }}|g" app/src/main/res/values/strings.xml
-          sed -i "s|https://example.com|${{ github.event.client_payload.url }}|g" app/src/main/res/values/strings.xml
-
-      - name: Replace App Icon (Logo)
-        run: |
+          sudo apt-get update
           sudo apt-get install -y imagemagick
-          mkdir -p app/src/main/res/mipmap-hdpi app/src/main/res/mipmap-mdpi app/src/main/res/mipmap-xhdpi app/src/main/res/mipmap-xxhdpi app/src/main/res/mipmap-xxxhdpi
-          
-          # ပုံကို Download ဆွဲပြီး Standard PNG အဖြစ် ပြောင်းလဲခြင်း
-          curl -L "${{ github.event.client_payload.logo_url }}" -o temp_logo.png
-          convert temp_logo.png -resize 512x512 app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
-          
-          # အခြား Size များသို့ ကူးထည့်ခြင်း
-          cp app/src/main/res/mipmap-xxxhdpi/ic_launcher.png app/src/main/res/mipmap-hdpi/ic_launcher.png
-          cp app/src/main/res/mipmap-xxxhdpi/ic_launcher.png app/src/main/res/mipmap-mdpi/ic_launcher.png
-          cp app/src/main/res/mipmap-xxxhdpi/ic_launcher.png app/src/main/res/mipmap-xhdpi/ic_launcher.png
-          cp app/src/main/res/mipmap-xxxhdpi/ic_launcher.png app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+          if [ -f "icon.png" ]; then
+            convert icon.png -resize 512x512 app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          fi
 
-      - name: Decode Keystore File
-        run: |
-          echo "${{ secrets.KEYSTORE_FILE }}" | base64 --decode > release.jks
+      # Keystore မလိုဘဲ Debug APK ကို တိုက်ရိုက် Build လုပ်ခြင်း
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --stacktrace
 
-      - name: Build APK & AAB (Release)
-        run: |
-          chmod +x gradlew
-          ./gradlew :app:bundleRelease :app:assembleRelease \
-            -Pandroid.injected.signing.store.file=$GITHUB_WORKSPACE/release.jks \
-            -Pandroid.injected.signing.store.password=${{ secrets.KEYSTORE_PASSWORD }} \
-            -Pandroid.injected.signing.key.alias=${{ secrets.KEY_ALIAS }} \
-            -Pandroid.injected.signing.key.password=${{ secrets.KEY_PASSWORD }}
+      # ထွက်လာတဲ့ APK ကို GitHub Artifact အနေနဲ့ သိမ်းဆည်းခြင်း
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
 
-      - name: Upload APK to Telegram
+      # Telegram Bot ရှိရင် APK ကို တန်းပို့ပေးခြင်း
+      - name: Send APK to Telegram
+        if: env.TELEGRAM_TOKEN != '' && env.TELEGRAM_CHAT_ID != ''
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          curl -v -F document=@app/build/outputs/apk/release/app-release.apk \
-            "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument?chat_id=${{ secrets.TELEGRAM_CHAT_ID }}&caption=✅ APK Success: ${{ github.event.client_payload.app_name }}"
+          curl -F document=@"app/build/outputs/apk/debug/app-debug.apk" \
+               -F caption="✅ Build Successful! Here is your APK: ${{ github.event.inputs.app_name }}" \
+               https://api.telegram.org/bot${{ TELEGRAM_TOKEN }}/sendDocument?chat_id=${{ TELEGRAM_CHAT_ID }}
