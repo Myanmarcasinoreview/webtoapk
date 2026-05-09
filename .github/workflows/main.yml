@@ -1,16 +1,14 @@
 name: Web to APK Builder
 
 on:
+  push:
+    branches: [ main ]
   workflow_dispatch:
     inputs:
       app_name:
         description: 'App Name'
         required: true
         default: 'My Web App'
-      web_url:
-        description: 'Website URL'
-        required: true
-        default: 'https://google.com'
 
 jobs:
   build:
@@ -29,33 +27,21 @@ jobs:
       - name: Grant Execute Permission for Gradlew
         run: chmod +x gradlew
 
-      # ImageMagick သုံးပြီး App Icon ကို အလိုအလျောက် ပြင်ဆင်ခြင်း
-      - name: Prepare App Icon
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y imagemagick
-          if [ -f "icon.png" ]; then
-            convert icon.png -resize 512x512 app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
-          fi
-
-      # Keystore မလိုဘဲ Debug APK ကို တိုက်ရိုက် Build လုပ်ခြင်း
       - name: Build Debug APK
         run: ./gradlew assembleDebug --stacktrace
 
-      # ထွက်လာတဲ့ APK ကို GitHub Artifact အနေနဲ့ သိမ်းဆည်းခြင်း
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
           path: app/build/outputs/apk/debug/app-debug.apk
 
-      # Telegram Bot ရှိရင် APK ကို တန်းပို့ပေးခြင်း
       - name: Send APK to Telegram
         if: env.TELEGRAM_TOKEN != '' && env.TELEGRAM_CHAT_ID != ''
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          curl -F document=@"app/build/outputs/apk/debug/app-debug.apk" \
-               -F caption="✅ Build Successful! Here is your APK: ${{ github.event.inputs.app_name }}" \
-               https://api.telegram.org/bot${{ TELEGRAM_TOKEN }}/sendDocument?chat_id=${{ TELEGRAM_CHAT_ID }}
+          curl -v -F document=@"app/build/outputs/apk/debug/app-debug.apk" \
+               -F caption="✅ Build Successful!" \
+               https://api.telegram.org/bot${{ env.TELEGRAM_TOKEN }}/sendDocument?chat_id=${{ env.TELEGRAM_CHAT_ID }}
